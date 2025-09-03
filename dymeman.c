@@ -111,6 +111,7 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
 -------------------------------------------\n");
 
     char flags[1000];
+    flags[0] = '\0';
     sprintf(flags, "\
 1. FLAGS\n\
 -> thread_safety: %s (switched %i during execution)\n\
@@ -119,6 +120,7 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
 threadSafetyFlag, safety_switch_count, autoBenchmarkFlag);
 
     char heap[1000];
+    heap[0] = '0';
     sprintf(heap, "\
 2. HEAP\n\
 -> Total allocations: %i\n\
@@ -129,6 +131,7 @@ threadSafetyFlag, safety_switch_count, autoBenchmarkFlag);
 total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
 
     char benchmark_report[1000];
+    benchmark_report[0] = '\0';
     strcat(benchmark_report, "3. BENCHMARKS\n");
     if (benchmarks) {
         for (unsigned int i=0; i<timers_count; i++) {

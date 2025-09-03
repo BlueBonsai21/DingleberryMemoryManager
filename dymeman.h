@@ -3,17 +3,31 @@
 /* There is NO need to check for fails manually. Everything is done internally.
 Realloc returns the realloc-ed pointer, if successful, else the provided one.
 All pointers are freed autmatically upon program termination. */
+
+/* Safely mallocs, adding the ptr to the manager array */
 #define dmalloc(size) s_malloc(size, __FILE__, __LINE__)
+
+/* Safely callocs, adding the ptr to the manager array */
 #define dcalloc(n, size) s_calloc(n, size, __FILE__, __LINE__)
+
+/* Safely reallocs, without losing the original ptr in case of failure. */
 #define drealloc(ptr, size) s_realloc(ptr, size, __FILE__, __LINE__)
+
+/* Safely frees, NULL-ifying the reference in the manager array */
 #define dfree(ptr) s_free(ptr, __FILE__, __LINE__)
 
 /* benchmark_create() creates a benchmark, with a provided unique tag.
 Benchmarking functions DO NOT return anything. They are tracked internally.
 Results of the benchmarks are tracked and displayed only when final_report_flag = true.
 NOTE: tag uniqueness is NOT enforced. By using the same tags you may lose control over a benchmark. */
+
+/* Tag uniqueness is NOT ensured. Might implement in the future. */
 #define benchmark_create(tag) s_benchmark_create(tag, __FILE__, __LINE__)
+
+/* Stops the specified benchmark. Use stop_benchmark_all, instead, to stop every benchmark. */
 #define benchmark_stop(tag) s_benchmark_stop(tag, __FILE__, __LINE__)
+
+/* Stops every benchmark. */
 #define benchmark_stop_all() s_benchmark_stop_all(__FILE__, __LINE__)
 
 /* Switches the flag to the provided state.

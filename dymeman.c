@@ -15,7 +15,7 @@ Add a free_all() function, to free every pointer in manager pointer
 #include <time.h>
 #include <string.h>
 
-#include "dymeman.h";
+#include "dymeman.h"
 
 bool final_report_flag = true; // flag
 void final_report() {
@@ -24,7 +24,7 @@ void final_report() {
 
 typedef struct {
     bool running;
-    char *tag;
+    const char *tag;
     clock_t start;
     clock_t finish;
 } time_bench;
@@ -184,7 +184,7 @@ static unsigned int check_free_slots(unsigned int minSize) {
 }
 
 bool atexit_active = false;
-static void* s_malloc(unsigned int size, const char *file, unsigned int line) {
+void* s_malloc(unsigned int size, const char *file, unsigned int line) {
     if(!atexit_active) {
         atexit(clear);
         atexit_active = true;
@@ -243,7 +243,7 @@ static void* s_malloc(unsigned int size, const char *file, unsigned int line) {
     return newPtr; // that's the newly allocated memory if no free slot is found, else it's precisely that slot.
 }
 
-static void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
+void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
     if (!atexit_active) {
         atexit(clear);
         atexit_active = true;
@@ -291,7 +291,7 @@ static void* s_calloc(unsigned int n, unsigned int size, const char *file, unsig
     return newPtr;
 }
 
-static void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int line) {
+void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int line) {
     if (!ptr || !manager) return NULL;
 
     if (!atexit_active) {
@@ -343,7 +343,7 @@ static void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsign
     return temp;
 }
 
-static void s_free(void *p, const char *file, unsigned int line) {
+void s_free(void *p, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     if (auto_benchmark_flag && !auto_benchmarking) {
@@ -365,7 +365,7 @@ static void s_free(void *p, const char *file, unsigned int line) {
     pthread_mutex_unlock(&thread_lock);
 }
 
-static void s_benchmark_create(const char *tag, const char *file, unsigned int line) {
+void s_benchmark_create(const char *tag, const char *file, unsigned int line) {
     time_bench **temp = (time_bench **)realloc(benchmarks, (timers_count+1)*(sizeof(time_bench *)));
     if (!temp) {
         printf("Benchmarks realloc failed. Continuing execution normally.\n");
@@ -383,7 +383,7 @@ static void s_benchmark_create(const char *tag, const char *file, unsigned int l
     timers_count++;
 }
 
-static void s_benchmark_stop(const char *tag, const char *file, unsigned int line) {
+void s_benchmark_stop(const char *tag, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {
@@ -397,7 +397,7 @@ static void s_benchmark_stop(const char *tag, const char *file, unsigned int lin
     pthread_mutex_unlock(&thread_lock);
 }
 
-static void s_benchmark_stop_all(const char *file, unsigned int line) {
+void s_benchmark_stop_all(const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {

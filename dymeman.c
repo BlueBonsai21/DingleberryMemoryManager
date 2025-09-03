@@ -86,17 +86,15 @@ static void clear() {
         for (unsigned int i=0; i<count; i++) {
             // in case weird shit happens in other files, we first check whether manager[i] exists
             if (manager[i].ptr) {
-                freed_size += sizeof(manager[i].size);
+                freed_size += manager[i].size;
                 free(manager[i].ptr);
                 manager[i].ptr = NULL;
                 freed_count++;
             }
         }
     
-        freed_size += sizeof(void *)*freed_count;
         free(manager);
         manager = NULL;
-        freed_count++;
     }
 
     static char *threadSafetyFlag = FLAG_ACTIVE;
@@ -115,7 +113,7 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
     flags[0] = '\0';
     sprintf(flags, "\
 1. FLAGS\n\
--> thread_safety: %s (switched %i during execution)\n\
+-> thread_safety: %s (switched %i times during execution)\n\
 -> auto_benchmark: %s\n\
 -------------------------------------------\n",
 threadSafetyFlag, safety_switch_count, autoBenchmarkFlag);

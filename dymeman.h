@@ -1,6 +1,6 @@
 #pragma once
 
-/* There is NO need to check for fails. Everything is done internally.
+/* There is NO need to check for fails manually. Everything is done internally.
 Realloc returns the realloc-ed pointer, if successful, else the provided one.
 All pointers are freed autmatically upon program termination. */
 #define dmalloc(size) s_malloc(size, __FILE__, __LINE__)

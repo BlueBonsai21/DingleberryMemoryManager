@@ -37,8 +37,8 @@ void auto_benchmark() {
     auto_benchmark_flag = true;
 }
 
-#define FLAG_ACTIVE  "✓"
-#define FLAG_INACTIVE "X"
+#define FLAG_ACTIVE  "TRUE"
+#define FLAG_INACTIVE "FALSE"
 
 static unsigned int safety_switch_count = 0;
 static bool thread_safe = true; // flag
@@ -170,15 +170,18 @@ This memory manager does NOT check for buffer overflows, nor allows multi-thread
 
 /* Check and returns the index of the first eventual free slot */
 static unsigned int check_free_slots(unsigned int minSize) {
-    pthread_mutex_lock(&thread_lock);
+    // if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<count; i++) {
         if (manager[i].ptr == NULL && !manager[i].busy && manager[i].size >= minSize) {
             manager[i].busy = true;
+
+            // pthread_mutex_unlock(&thread_lock);
+
             return i;
         }
     }
-    pthread_mutex_unlock(&thread_lock);
+    // if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
     return (unsigned int)-1;
 }
@@ -203,7 +206,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         if (!temp) {
             printf("Manager realloc failed. Remained the same size (F: %s, L: %i).\n", file, line);
 
-            pthread_mutex_unlock(&thread_lock);
+            if (thread_safe) pthread_mutex_unlock(&thread_lock);
             
             return NULL;
         }
@@ -212,7 +215,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         if (!newPtr) {
             printf("NewMem alloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
 
-            pthread_mutex_unlock(&thread_lock);
+            if (thread_safe) pthread_mutex_unlock(&thread_lock);
             
             return NULL;
         }
@@ -228,8 +231,6 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         total_memory_allocated+=size;
 
         count++;
-
-        pthread_mutex_unlock(&thread_lock);
     } else {
         manager[free_slot].busy = false;    
         manager[free_slot].file = file;
@@ -238,7 +239,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         newPtr = manager[free_slot].ptr;
     }
     
-    pthread_mutex_unlock(&thread_lock);
+    if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
     return newPtr; // that's the newly allocated memory if no free slot is found, else it's precisely that slot.
 }
@@ -261,7 +262,7 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
     if (!temp) {
         printf("Manager realloc failed (F: %s, L: %i).\n", file, line);
 
-        pthread_mutex_unlock(&thread_lock);
+        if (thread_safe) pthread_mutex_unlock(&thread_lock);
         
         return NULL;
     }
@@ -270,7 +271,7 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
     if (!newPtr) {
         printf("NewMem calloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
 
-        pthread_mutex_unlock(&thread_lock);
+        if (thread_safe) pthread_mutex_unlock(&thread_lock);
         
         return NULL;
     }
@@ -286,7 +287,7 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
     total_blocks_allocated++;
     total_memory_allocated+=size;
 
-    pthread_mutex_unlock(&thread_lock);
+    if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
     return newPtr;
 }
@@ -299,7 +300,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
         atexit_active = true;
     }
 
-    pthread_mutex_lock(&thread_lock);
+    if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     if (auto_benchmark_flag && !auto_benchmarking) {
         benchmark_create("AUTO_BENCHMARK_FLAG");
@@ -317,7 +318,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
     if (!found) {
         printf("Couldn't find the provided pointer inside of the manager (F: %s, L: %i).\n", file, line);
 
-        pthread_mutex_unlock(&thread_lock);
+        if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
         return ptr;
     }
@@ -325,7 +326,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
     if (!temp) {
         printf("Realloc failed (F: %s, L: %i).\n", file, line);
 
-        pthread_mutex_unlock(&thread_lock);
+        if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
         return ptr;
     }
@@ -338,7 +339,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
 
     manager[manager_index].size = newSize;
 
-    pthread_mutex_unlock(&thread_lock);
+    if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
     return temp;
 }
@@ -356,13 +357,13 @@ void s_free(void *p, const char *file, unsigned int line) {
             manager[i].ptr = NULL;
             freed_count++;
             
-            pthread_mutex_unlock(&thread_lock);
+            if (thread_safe) pthread_mutex_unlock(&thread_lock);
 
             return;
         }
     }
 
-    pthread_mutex_unlock(&thread_lock);
+    if (thread_safe) pthread_mutex_unlock(&thread_lock);
 }
 
 void s_benchmark_create(const char *tag, const char *file, unsigned int line) {

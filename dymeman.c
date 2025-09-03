@@ -98,47 +98,40 @@ static void clear() {
     static char *autoBenchmarkFlag = "✓";
     if (!auto_benchmark) autoBenchmarkFlag = "X";
 
-    char *report[0xfff]; // 4095 chars
-    strcat(report, "Dymeman - PROGRAM EXECUTION TERMINATED\n");
-    strcat(report, "-------------------------------------------\n");
-    strcat(report, "1. FLAGS\n");
-    strcat(report, "-> THREAD_SAFETY: ");
-    strcat(report, threadSafetyFlag);
-    strcat(report, " (switched ");
-    strcat(report, (char *)safety_switch_count);
-    strcat(report, " during execution)\n");
-    strcat(report, "-> AUTO_BENCHMARK: ");
-    strcat(report, autoBenchmarkFlag);
-    strcat(report, "\n");
-    strcat(report, "-------------------------------------------\n");
-    strcat(report, "2. HEAP REPORT\n");
-    strcat(report, "-> Allocations: ");
-    strcat(report, (char *)total_blocks_allocated);
-    strcat(report, "\n");
-    strcat(report, "-> Liberations (free): ");
-    strcat(report, (char *)freed_count);
-    strcat(report, "\n");
-    strcat(report, "-> Total allocation (bytes): ");
-    strcat(report, (char *)total_memory_allocated);
-    strcat(report, "\n");
-    strcat(report, "-> Total liberation (bytes): ");
-    strcat(report, (char *)freed_size);
-    strcat(report, "\n");
-    strcat(report, "-> Total leak (bytes): ");
-    strcat(report, (char *)(total_memory_allocated-freed_size));
-    strcat(report, "\n");
-    strcat(report, "-------------------------------------------\n");
-    strcat(report, "3. BENCHMARKS\n");
+    char report[0xfff]; // 4095 chars
+    strcat(report, "\
+Dymeman - PROGRAM EXECUTION TERMINATED\n\
+-------------------------------------------\n");
+
+    char flags[1000];
+    snprintf(flags, 1000, "\
+1. FLAGS\n\
+-> thread_safety: %s (switched %i during execution)\n\
+-> auto_benchmark: %s\n\
+-------------------------------------------\n",
+threadSafetyFlag, safety_switch_count, autoBenchmarkFlag);
+
+    char heap[1000];
+    sprintf(heap, 1000, "\
+2. HEAP\n\
+-> Total allocations: %i\n\
+-> Total frees: %i\n\
+-> Total memory allocated (bytes): %i\n\
+-> Total memory freed (bytes): %i\n\
+-------------------------------------------\n",
+total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
+
+    char benchmark_report[1000];
+    strcat(benchmark_report, "3. BENCHMARKS\n");
     if (benchmarks) {
         for (unsigned int i=0; i<timers_count; i++) {
-            strcat(report, "#");
-            strcat(report, (char *)i);
-            strcat(report, ":\n");
-            strcat(report, "\tTag: ");
-            strcat(report, benchmarks[i]->tag);
-            strcat(report, "\n\tDelta time (ms): ");
-            strcat(report, (char *)(benchmarks[i]->finish-benchmarks[i]->start));
-            strcat(report, "\n");
+            snprintf(heap, 1000, "\
+                #%i:\n\
+                \tTag: %s\n\
+                \tTime (ms): %i\n",
+                i+1,
+                benchmarks[i]->tag,
+                benchmarks[i]->finish-benchmarks[i]->start);
 
             free(benchmarks[i]);
             benchmarks[i] = NULL;
@@ -146,15 +139,20 @@ static void clear() {
         free(benchmarks);
         benchmarks = NULL;
     } else {
-        strcat(report, "-> NO BENCHMARKS STARTED.");
+        strcat(heap, "-> NO BENCHMARKS STARTED.");
     }
-    strcat(report, "-------------------------------------------\n");
-    strcat(report, "4. NOTES");
-    strcat(report, "Memory management is safe as long as this manager is used.\n\
-Malloc, calloc, realloc, free are all overwritten via preprocessor directives and made safe.\
-This doesn't mean that once you've stopped using this manager your program will run as intended.\n");
-    strcat(report, "By turning off all flags you'll get the best results.\n");
-    strcat(report, "This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n");
+    strcat(benchmark_report, "-------------------------------------------\n");
+
+    char notes[1000] = "4. NOTES\nMemory management is safe as long as this manager is used.\n\
+Malloc, calloc, realloc, free are all overwritten via preprocessor directives and made safe.\n\
+This doesn't mean that once you've stopped using this manager your program will run as intended.\n\
+By turning off all flags you'll get the best results.\n\
+This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n");
+
+    strcat(report, flags);
+    strcat(report, heap);
+    strcat(report, benchmark_report);
+    strcat(report, notes);
 
     printf("%s", report);
 }

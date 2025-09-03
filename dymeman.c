@@ -150,7 +150,7 @@ total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
         free(benchmarks);
         benchmarks = NULL;
     } else {
-        strcat(heap, "-> NO BENCHMARKS STARTED.");
+        strcat(benchmark_report, "-> NO BENCHMARKS STARTED.\n");
     }
     strcat(benchmark_report, "-------------------------------------------\n");
 

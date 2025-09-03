@@ -45,8 +45,7 @@ static unsigned int safety_switch_count = 0;
 static bool thread_safe = true; // flag
 void thread_safety(bool state) {
     if (state != thread_safe) safety_switch_count++;
-    if (state) thread_safe = false;
-    else thread_safe = true;
+    thread_safe = true;
 }
 
 static unsigned int total_blocks_allocated = 0;
@@ -280,7 +279,7 @@ static void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsign
 }
 
 /* Safely frees, NULL-ifying the reference in the manager array */
-void s_free(void *p, const char *file, unsigned int line) {
+static void s_free(void *p, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     if (auto_benchmark_flag && !auto_benchmarking) {

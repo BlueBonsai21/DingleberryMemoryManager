@@ -1,13 +1,12 @@
 #pragma once
 
-/* Overwriting stdlib.h memory management functions with their safe version.
-There is NO need to check for fails. Everything is done internally.
+/* There is NO need to check for fails. Everything is done internally.
 Realloc returns the realloc-ed pointer, if successful, else the provided one.
 All pointers are freed autmatically upon program termination. */
-#define malloc(size) s_malloc(size, __FILE__, __LINE__)
-#define calloc(n, size) s_calloc(n, size, __FILE__, __LINE__)
-#define realloc(ptr, size) s_realloc(ptr, size, __FILE__, __LINE__)
-#define free(ptr) s_free(ptr, __FILE__, __LINE__)
+#define dmalloc(size) s_malloc(size, __FILE__, __LINE__)
+#define dcalloc(n, size) s_calloc(n, size, __FILE__, __LINE__)
+#define drealloc(ptr, size) s_realloc(ptr, size, __FILE__, __LINE__)
+#define dfree(ptr) s_free(ptr, __FILE__, __LINE__)
 
 /* benchmark_create() creates a benchmark, with a provided unique tag.
 Benchmarking functions DO NOT return anything. They are tracked internally.

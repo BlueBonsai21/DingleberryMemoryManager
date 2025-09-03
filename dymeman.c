@@ -147,7 +147,7 @@ total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
 Malloc, calloc, realloc, free are all overwritten via preprocessor directives and made safe.\n\
 This doesn't mean that once you've stopped using this manager your program will run as intended.\n\
 By turning off all flags you'll get the best results.\n\
-This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n");
+This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n";
 
     strcat(report, flags);
     strcat(report, heap);

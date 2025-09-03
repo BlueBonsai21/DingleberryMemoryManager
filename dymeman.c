@@ -4,6 +4,9 @@ Create an array to store everything that's to be freed but not counted, so for i
 Finish benchmarks.
 Create unique tag strings and return them from benchmark_create(), so users don't have to make them up and have no
 possibility of overriding previous tags.
+Will add mode detailed report in the future. Possibly by writing everything in a .txt.
+Gotta add a detailed file+line report for auto_benchmark and thread_safety flags switches.
+Make the AUTO_BENCHMARK be either global or local to the first memory management operation called in the program.
 */
 
 #include <stdio.h>
@@ -11,15 +14,38 @@ possibility of overriding previous tags.
 #include <stdbool.h>
 #include <pthread.h>
 #include <time.h>
+#include <string.h>
+
+#include "dymeman.h";
+
+bool final_report_flag = true; // flag
+void final_report() {
+    final_report_flag = false;
+}
+
+typedef struct {
+    bool running;
+    char *tag;
+    clock_t start;
+    clock_t finish;
+} time_bench;
+bool auto_benchmark_flag = false; // flag
+bool auto_benchmarking = false;
+unsigned int timers_count = 0;
+time_bench **benchmarks = NULL;
+
+void auto_benchmark() {
+    auto_benchmark_flag = true;
+}
 
 #define THREAD_SAFE "TRUE"
 #define THREAD_UNSAFE "FALSE"
 
 static unsigned int safety_switch_count = 0;
-static bool thread_safe = true;
-void thread_safety(bool active) {
-    if (active != thread_safe) safety_switch_count++;
-    if (active) thread_safe = false;
+static bool thread_safe = true; // flag
+void thread_safety(bool state) {
+    if (state != thread_safe) safety_switch_count++;
+    if (state) thread_safe = false;
     else thread_safe = true;
 }
 
@@ -30,64 +56,134 @@ static unsigned int count = 0;
 static void **manager = NULL;
 static pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static void s_free_all() {
-    if (!manager) return;
-
-    unsigned int freed_count;
-    unsigned int freed_size;
-
-    for (unsigned int i=0; i<count; i++) {
-        // in case weird shit happens in other files, we first check whether manager[i] exists
-        if (manager[i]) {
-            freed_size += sizeof(manager[i]);
-            free(manager[i]);
-            manager[i] = NULL;
-            freed_count++;
+/* Function called by atexit(). Cleans up memory and gives a final report. */
+static void clear() {
+    if (!final_report_flag) {
+        if (manager) {
+            for (unsigned int i=0; i<count; i++) {
+                if (manager[i]) free(manager[i]);
+            }
+            free(manager);
         }
+        if (benchmarks) {
+            for (unsigned int i=0; i<count; i++) {
+                if (benchmarks[i]) free(benchmarks[i]);
+            }
+            free(benchmarks);
+        }
+        return;
     }
 
-    freed_size += sizeof(void *)*freed_count;
-    free(manager);
-    manager = NULL;
-    freed_count++;
+    unsigned int freed_count = 0;
+    unsigned int freed_size = 0;
+    if (manager) {
+        for (unsigned int i=0; i<count; i++) {
+            // in case weird shit happens in other files, we first check whether manager[i] exists
+            if (manager[i]) {
+                freed_size += sizeof(manager[i]);
+                free(manager[i]);
+                manager[i] = NULL;
+                freed_count++;
+            }
+        }
+    
+        freed_size += sizeof(void *)*freed_count;
+        free(manager);
+        manager = NULL;
+        freed_count++;
+    }
 
-    static char threadSafetyFlag = '✓';
+    static char *threadSafetyFlag = "✓";
     if (!thread_safe) threadSafetyFlag = "X";
 
-    // TODO: finish adding times, alloced memory
-    printf("\n\n\
-Dingleberry - PROGRAM EXECUTION TERMINATED\n\n\
-\% THREAD_SAFETY: %c (switched %i times)\n\
--> Total heap blocks allocated: %i\n\
--> Total heap blocks freed: %i\n\
--> Total heap size allocated: %i bytes \n\
--> Total heap size freed: %i bytes\n\
--------------------------------------------\n\
-\% ALLOC_TIME_TRACK: %c\n\
-):\n\
--> Total execution time: \n\
-", &threadSafetyFlag, &safety_switch_count, &total_blocks_allocated, &freed_count, &total_memory_allocated, &freed_size);
+    static char *autoBenchmarkFlag = "✓";
+    if (!auto_benchmark) autoBenchmarkFlag = "X";
+
+    char *report[0xfff]; // 4095 chars
+    strcat(report, "Dymeman - PROGRAM EXECUTION TERMINATED\n");
+    strcat(report, "-------------------------------------------\n");
+    strcat(report, "1. FLAGS\n");
+    strcat(report, "-> THREAD_SAFETY: ");
+    strcat(report, threadSafetyFlag);
+    strcat(report, " (switched ");
+    strcat(report, (char *)safety_switch_count);
+    strcat(report, " during execution)\n");
+    strcat(report, "-> AUTO_BENCHMARK: ");
+    strcat(report, autoBenchmarkFlag);
+    strcat(report, "\n");
+    strcat(report, "-------------------------------------------\n");
+    strcat(report, "2. HEAP REPORT\n");
+    strcat(report, "-> Allocations: ");
+    strcat(report, (char *)total_blocks_allocated);
+    strcat(report, "\n");
+    strcat(report, "-> Liberations (free): ");
+    strcat(report, (char *)freed_count);
+    strcat(report, "\n");
+    strcat(report, "-> Total allocation (bytes): ");
+    strcat(report, (char *)total_memory_allocated);
+    strcat(report, "\n");
+    strcat(report, "-> Total liberation (bytes): ");
+    strcat(report, (char *)freed_size);
+    strcat(report, "\n");
+    strcat(report, "-> Total leak (bytes): ");
+    strcat(report, (char *)(total_memory_allocated-freed_size));
+    strcat(report, "\n");
+    strcat(report, "-------------------------------------------\n");
+    strcat(report, "3. BENCHMARKS\n");
+    if (benchmarks) {
+        for (unsigned int i=0; i<timers_count; i++) {
+            strcat(report, "#");
+            strcat(report, (char *)i);
+            strcat(report, ":\n");
+            strcat(report, "\tTag: ");
+            strcat(report, benchmarks[i]->tag);
+            strcat(report, "\n\tDelta time (ms): ");
+            strcat(report, (char *)(benchmarks[i]->finish-benchmarks[i]->start));
+            strcat(report, "\n");
+
+            free(benchmarks[i]);
+            benchmarks[i] = NULL;
+        }
+        free(benchmarks);
+        benchmarks = NULL;
+    } else {
+        strcat(report, "-> NO BENCHMARKS STARTED.");
+    }
+    strcat(report, "-------------------------------------------\n");
+    strcat(report, "4. NOTES");
+    strcat(report, "Memory management is safe as long as this manager is used.\n\
+Malloc, calloc, realloc, free are all overwritten via preprocessor directives and made safe.\
+This doesn't mean that once you've stopped using this manager your program will run as intended.\n");
+    strcat(report, "By turning off all flags you'll get the best results.\n");
+    strcat(report, "This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n");
+
+    printf("%s", report);
 }
 
+/* Safely mallocs, adding the ptr to the manager array */
 bool atexit_active = false;
-void* s_malloc(unsigned int size) {
+static void* s_malloc(unsigned int size, const char *file, unsigned int line) {
     if(!atexit_active) {
-        atexit(s_free_all);
+        atexit(clear);
         atexit_active = true;
     }
 
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
+    if (auto_benchmark_flag && !auto_benchmarking) {
+        benchmark_create("AUTO_BENCHMARK_FLAG");
+    }
+
     void **temp = (void **)realloc(manager, (count+1)*sizeof(void *));
     if (!temp) {
-        printf("Manager realloc failed. Remained the same size.\n");
+        printf("Manager realloc failed. Remained the same size (F: %s, L: %i).\n", file, line);
         pthread_mutex_unlock(&thread_lock);
         return NULL;
     }
 
     void *newMem = (void *)malloc(size);
     if (!newMem) {
-        printf("NewMem alloc failed. Remained uninitialised. Realloc cancelled.\n");
+        printf("NewMem alloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
         pthread_mutex_unlock(&thread_lock);
         return NULL;
     }
@@ -104,24 +200,31 @@ void* s_malloc(unsigned int size) {
     return newMem;
 }
 
-void* s_calloc(unsigned int n, unsigned int size) {
+/* Safely callocs, adding the ptr to the manager array */
+static void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
     if (!atexit_active) {
-        atexit(s_free_all);
+        atexit(clear);
         atexit_active = true;
     }
 
+    if (size <= 0) return NULL;
+
     if (thread_safe) pthread_mutex_lock(&thread_lock);
+
+    if (auto_benchmark_flag && !auto_benchmarking) {
+        benchmark_create("AUTO_BENCHMARK_FLAG");
+    }
 
     void **temp = (void **)realloc(manager, (count+1)*size);
     if (!temp) {
-        printf("Manager realloc failed. Remained the same size.\n");
+        printf("Manager realloc failed (F: %s, L: %i).\n", file, line);
         pthread_mutex_unlock(&thread_lock);
         return NULL;
     }
     
     void *newMem = (void *)calloc(n, size);
     if (!newMem) {
-        printf("NewMem calloc failed. Remained uninitialised. Realloc cancelled.\n");
+        printf("NewMem calloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
         pthread_mutex_unlock(&thread_lock);
         return NULL;
     }
@@ -138,8 +241,51 @@ void* s_calloc(unsigned int n, unsigned int size) {
     return newMem;
 }
 
-void s_free(void *p) {
+/* Safely reallocs, without losing the original ptr in case of failure. */
+static void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int line) {
+    if (!ptr || !manager) return NULL;
+
+    if (!atexit_active) {
+        atexit(clear);
+        atexit_active = true;
+    }
+
+    pthread_mutex_lock(&thread_lock);
+
+    if (auto_benchmark_flag && !auto_benchmarking) {
+        benchmark_create("AUTO_BENCHMARK_FLAG");
+    }
+
+    bool found = false;
+    for (unsigned int i=0; i<count; i++) {
+        if (manager[i] == ptr) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        printf("Couldn't find the provided pointer inside of the manager (F: %s, L: %i).\n", file, line);
+        return ptr;
+    }
+    void *temp = (void *)realloc(ptr, newSize);
+    if (!temp) {
+        printf("Realloc failed (F: %s, L: %i).\n", file, line);
+        return ptr;
+    }
+    ptr = temp;
+
+    pthread_mutex_unlock(&thread_lock);
+
+    return ptr;
+}
+
+/* Safely frees, NULL-ifying the reference in the manager array */
+void s_free(void *p, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
+
+    if (auto_benchmark_flag && !auto_benchmarking) {
+        benchmark_create("AUTO_BENCHMARK_FLAG");
+    }
 
     for (unsigned int i = 0; i < count; i++) {
         if (manager[i] == p) {
@@ -154,49 +300,48 @@ void s_free(void *p) {
     pthread_mutex_unlock(&thread_lock);
 }
 
-typedef struct {
-    bool running;
-    unsigned char *tag;
-    clock_t start;
-    clock_t finish;
-} time_bench;
-
 /* Tag uniqueness is NOT ensured. Might implement in the future. */
-unsigned int timers_count = 0;
-time_bench *benchmarks;
-void benchmark_create(char *tag) {
-    if (!benchmarks) {
-        benchmarks = (time_bench *)realloc(timers_count+1, sizeof(time_bench *)); // not sure if it's right
-        if (!benchmarks) printf("Benchmarks realloc failed. Continuing execution normally.\n");
+static void s_benchmark_create(const char *tag, const char *file, unsigned int line) {
+    time_bench **temp = (time_bench **)realloc(benchmarks, (timers_count+1)*(sizeof(time_bench *)));
+    if (!temp) {
+        printf("Benchmarks realloc failed. Continuing execution normally.\n");
         return;
     }
+
     time_bench *newBench = (time_bench *)malloc(sizeof(time_bench));
     if (!newBench) printf("Benchmark malloc failed.");
+    newBench->start = clock();
+    newBench->running = true;
+    newBench->tag = tag;
 
-    // TODO: finish
+    benchmarks = temp;
+    benchmarks[timers_count+1] = newBench;
+    timers_count++;
 }
 
-void stop_benchmark(char *tag) {
+/* Stops the specified benchmark. Use stop_benchmark_all, instead, to stop every benchmark. */
+static void s_benchmark_stop(const char *tag, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {
-        if (benchmarks[i].tag == tag) {
-            if (!benchmarks[i].running) break;
-            benchmarks[i].running = false;
-            benchmarks[i].finish = clock();
+        if (benchmarks[i]->tag == tag) {
+            if (!benchmarks[i]->running) break;
+            benchmarks[i]->running = false;
+            benchmarks[i]->finish = clock();
         }
     }
 
     pthread_mutex_unlock(&thread_lock);
 }
 
-void stop_benchmark_all() {
+/* Stops every benchmark. */
+static void s_benchmark_stop_all(const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {
-        if (benchmarks[i].running) {
-            benchmarks[i].running = false;
-            benchmarks[i].finish = clock();
+        if (benchmarks[i]->running) {
+            benchmarks[i]->running = false;
+            benchmarks[i]->finish = clock();
         }
     }
 

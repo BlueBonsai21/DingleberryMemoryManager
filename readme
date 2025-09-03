@@ -1,0 +1,13 @@
+This is a dimple dynamic memory manager meant for personal use, and personal learning.
+The functioning is pretty straightforward:
+1) pull the repository
+2) include the dymeman.h header
+3) use the documented functionalities in the header.
+
+It provies: stdlib.h memory management functions override via pre-processor directives. No need to check for failures, it's automatised.
+At the end of your program's execution it prints out (if the final_report_flag is set to true) a comprehensive report of all the flags present (active or not),
+heap allocated (amount of allocations and total size, with the detected memory leak), manual and automatic benchmarking.
+Check dymeman.h for more infos and better comprehension.
+For doubts, join the Discord and ping @vicarius.christi: https://discord.gg/85Wt8MH9mx
+
+Thanks.

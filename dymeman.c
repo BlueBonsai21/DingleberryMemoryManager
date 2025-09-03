@@ -136,7 +136,7 @@ total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
     strcat(benchmark_report, "3. BENCHMARKS\n");
     if (benchmarks) {
         for (unsigned int i=0; i<timers_count; i++) {
-            sprintf(heap, "\
+            sprintf(benchmark_report, "\
                 #%i:\n\
                 \tTag: %s\n\
                 \tTime (ms): %i\n",

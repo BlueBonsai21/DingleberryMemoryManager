@@ -4,7 +4,7 @@ The functioning is pretty straightforward:
 2) include the dymeman.h header
 3) use the documented functionalities in the header.
 
-It provies: stdlib.h memory management functions override via pre-processor directives. No need to check for failures, it's automatised.
+It provides: stdlib.h memory management functions improvements. No need to check for failures, it's automatised.
 At the end of your program's execution it prints out (if the final_report_flag is set to true) a comprehensive report of all the flags present (active or not),
 heap allocated (amount of allocations and total size, with the detected memory leak), manual and automatic benchmarking.
 Check dymeman.h for more infos and better comprehension.

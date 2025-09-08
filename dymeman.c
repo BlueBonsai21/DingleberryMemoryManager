@@ -24,16 +24,29 @@ to the user, just like Dr. Memory does. */
 
 #include "dymeman.h"
 
+//! FLAGS
 #define FLAG_ACTIVE  "TRUE"
 #define FLAG_INACTIVE "FALSE"
 
-static pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
+// Thread safety
+static unsigned int thread_safe_flag_switches = 0;
+bool thread_safe_flag = true;
 
-bool final_report_flag = true; // flag
-void final_report() {
-    final_report_flag = false;
+//? Remember to change flags in dymeman.h after any change here
+bool *flags = {&thread_safe_flag};
+void set_flag(enum flags flag, bool state) {
+    if (flag >= 0 && flag < sizeof(flags)/sizeof(flags[0])) { // starts from 0; '<' is correct
+        if (flag == THREAD_SAFE && flags[flag] != state) {
+            thread_safe_flag_switches++;
+        }
+        flags[flag] = state;
+    }
 }
 
+//! THREADS
+static pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
+
+//! BENCHMARKS
 #define time_bench_container {running, }
 typedef struct {
     bool running;
@@ -45,14 +58,7 @@ bool auto_benchmarking = false;
 unsigned int timers_count = 0;
 time_bench **benchmarks = NULL;
 
-static unsigned int safety_switch_count = 0;
-static bool thread_safe = true; // flag
-void thread_safety(bool state) {
-    if (state != thread_safe) safety_switch_count++;
-    thread_safe = !thread_safe;
-}
-
-/* Memory tracking variables */
+//! MEMORY TRACKING
 typedef struct {
     bool freed;
     bool busy;
@@ -69,36 +75,19 @@ static unsigned int internal_use_freed = 0;
 unsigned int freed_count = 0;
 unsigned int freed_size = 0;
 
-/* For tracking custom allocators/deallocators */
+//? For custom allocators/deallocator
 static unsigned int count = 0;
 static mem_t *manager = NULL;
 
-/* Debug functions substituting stdlib.h functions */
+//? For memory diagnostics
 static unsigned int debug_track_fail = 0;
 static unsigned int debug_count = 0;
 static unsigned int debug_tracker_size = 0;
 static mem_t *debug_leak_info = NULL; // contains instances from debug_tracker that leak memory
 static mem_t *debug_tracker = NULL;
 
-
-/* Function called by atexit(). Cleans up memory and gives a final report. */
+//? Called by atexit()
 static void clear() {
-    if (!final_report_flag) {
-        if (manager) {
-            for (unsigned int i=0; i<count; i++) {
-                if (manager[i].ptr) free(manager[i].ptr);
-            }
-            free(manager);
-        }
-        if (benchmarks) {
-            for (unsigned int i=0; i<count; i++) {
-                if (benchmarks[i]) free(benchmarks[i]);
-            }
-            free(benchmarks);
-        }
-        return;
-    }
-
     if (manager) {
         for (unsigned int i=0; i<count; i++) {
             // in case weird shit happens in other files, we first check whether manager[i] exists
@@ -114,9 +103,6 @@ static void clear() {
         manager = NULL;
     }
 
-    static char *threadSafetyFlag = FLAG_ACTIVE;
-    if (!thread_safe) threadSafetyFlag = FLAG_INACTIVE;
-
     char report[0xfff]; // 4095 chars
     report[0] = '\0';
     strcat(report, "\
@@ -127,9 +113,10 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
     flags[0] = '\0';
     sprintf(flags, "\
 1. FLAGS\n\
--> thread_safety: %s (switched %i times during execution)\n\
+(0 = inactive, 1 = active)\n\
+-> thread_safety: %i (switched %i times during execution)\n\
 -------------------------------------------\n",
-threadSafetyFlag, safety_switch_count);
+thread_safe_flag, thread_safe_flag_switches);
 
     char heap[1000];
     heap[0] = '\0';
@@ -177,9 +164,9 @@ This memory manager does NOT check for buffer overflows, nor allows multi-thread
     printf("%s", report);
 }
 
-/* Check and returns the index of the first eventual free slot */
+//? Check and return index of the first eventually free slot
 static unsigned int check_free_slots(unsigned int minSize) {
-    // if (thread_safe) pthread_mutex_lock(&thread_lock);
+    // if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<count; i++) {
         if (manager[i].ptr == NULL && !manager[i].busy && manager[i].size >= minSize) {
@@ -190,7 +177,7 @@ static unsigned int check_free_slots(unsigned int minSize) {
             return i;
         }
     }
-    // if (thread_safe) pthread_mutex_unlock(&thread_lock);
+    // if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
     return (unsigned int)-1;
 }
@@ -202,7 +189,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         atexit_active = true;
     }
 
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     void *newPtr = NULL;
     unsigned int free_slot = check_free_slots(size);
@@ -211,7 +198,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         if (!temp) {
             printf("Manager realloc failed. Remained the same size (F: %s, L: %i).\n", file, line);
 
-            if (thread_safe) pthread_mutex_unlock(&thread_lock);
+            if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
             
             return NULL;
         }
@@ -220,7 +207,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         if (!newPtr) {
             printf("NewMem alloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
 
-            if (thread_safe) pthread_mutex_unlock(&thread_lock);
+            if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
             
             return NULL;
         }
@@ -244,7 +231,7 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
         newPtr = manager[free_slot].ptr;
     }
     
-    if (thread_safe) pthread_mutex_unlock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
     return newPtr; // that's the newly allocated memory if no free slot is found, else it's precisely that slot.
 }
@@ -257,13 +244,13 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
 
     if (size <= 0) return NULL;
 
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     mem_t *temp = (mem_t *)realloc(manager, (count+1)*sizeof(mem_t));
     if (!temp) {
         printf("Manager realloc failed (F: %s, L: %i).\n", file, line);
 
-        if (thread_safe) pthread_mutex_unlock(&thread_lock);
+        if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
         
         return NULL;
     }
@@ -272,7 +259,7 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
     if (!newPtr) {
         printf("NewMem calloc failed. Realloc cancelled (F: %s, L: %i).\n", file, line);
 
-        if (thread_safe) pthread_mutex_unlock(&thread_lock);
+        if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
         
         return NULL;
     }
@@ -288,7 +275,7 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
     total_blocks_allocated++;
     total_memory_allocated+=size;
 
-    if (thread_safe) pthread_mutex_unlock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
     return newPtr;
 }
@@ -301,7 +288,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
         atexit_active = true;
     }
 
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     bool manager_index = 0;
     bool found = false;
@@ -315,7 +302,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
     if (!found) {
         printf("Couldn't find the provided pointer inside of the manager (F: %s, L: %i).\n", file, line);
 
-        if (thread_safe) pthread_mutex_unlock(&thread_lock);
+        if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
         return ptr;
     }
@@ -323,7 +310,7 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
     if (!temp) {
         printf("Realloc failed (F: %s, L: %i).\n", file, line);
 
-        if (thread_safe) pthread_mutex_unlock(&thread_lock);
+        if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
         return ptr;
     }
@@ -336,13 +323,13 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
 
     manager[manager_index].size = newSize;
 
-    if (thread_safe) pthread_mutex_unlock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
     return temp;
 }
 
 void s_free(void *p, const char *file, unsigned int line) {
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i = 0; i < count; i++) {
         if (manager[i].ptr == p) {
@@ -350,13 +337,13 @@ void s_free(void *p, const char *file, unsigned int line) {
             manager[i].ptr = NULL;
             freed_count++;
             
-            if (thread_safe) pthread_mutex_unlock(&thread_lock);
+            if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 
             return;
         }
     }
 
-    if (thread_safe) pthread_mutex_unlock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_unlock(&thread_lock);
 }
 
 void s_free_all() {
@@ -402,7 +389,7 @@ void s_benchmark_create(const char *tag, const char *file, unsigned int line) {
 }
 
 void s_benchmark_stop(const char *tag, const char *file, unsigned int line) {
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {
         if (strcmp(benchmarks[i]->tag, tag) == 0) {
@@ -416,7 +403,7 @@ void s_benchmark_stop(const char *tag, const char *file, unsigned int line) {
 }
 
 void s_benchmark_stop_all(const char *file, unsigned int line) {
-    if (thread_safe) pthread_mutex_lock(&thread_lock);
+    if (thread_safe_flag) pthread_mutex_lock(&thread_lock);
 
     for (unsigned int i=0; i<timers_count; i++) {
         if (benchmarks[i]->running) {

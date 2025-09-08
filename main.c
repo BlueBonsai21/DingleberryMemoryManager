@@ -4,6 +4,7 @@
 #include "dymeman.h"
 
 int main(void) {
+    set_flag(THREAD_SAFE, false);
     malloc(30);
     void *x = malloc(20);
     malloc(10);

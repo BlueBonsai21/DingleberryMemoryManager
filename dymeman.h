@@ -1,5 +1,10 @@
 #pragma once
 
+/* IMPORTANT: when using stdlib.h built-in memory management functions and applying this library to debug or 
+see if any memory leak is happening, whenever the pointer you're allocating is NOT correctly initialised
+this library will NOT track it and will NOT consider it in the final report.
+Planning onto changing this in the future. */
+
 /* There is NO need to check for fails manually. Everything is done internally.
 Realloc returns the realloc-ed pointer, if successful, else the provided one.
 All pointers are freed autmatically upon program termination. */

@@ -4,6 +4,10 @@
 #include "dymeman.h"
 
 int main(void) {
-    dmalloc(30);
+    malloc(30);
+    void *x = malloc(20);
+    malloc(10);
+    free(x);
+    
     return 0;
 }

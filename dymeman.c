@@ -6,6 +6,7 @@ Gotta add a detailed file+line report for auto_benchmark and thread_safety flags
 Make the AUTO_BENCHMARK be either global or local to the first memory management operation called in the program.
 Add better documentation
 Add a free_all() function, to free every pointer in manager pointer
+TODO: free every internal use memory.
 */
 
 #include <stdio.h>
@@ -27,6 +28,7 @@ void final_report() {
     final_report_flag = false;
 }
 
+#define time_bench_container {running, }
 typedef struct {
     bool running;
     const char *tag;
@@ -46,6 +48,7 @@ void thread_safety(bool state) {
 
 /* Memory tracking variables */
 typedef struct {
+    bool freed;
     bool busy;
     void *ptr;
     unsigned int size;
@@ -68,6 +71,7 @@ static mem_t *manager = NULL;
 static unsigned int debug_track_fail = 0;
 static unsigned int debug_count = 0;
 static unsigned int debug_tracker_size = 0;
+static mem_t *debug_leak_info = NULL; // contains instances from debug_tracker that leak memory
 static mem_t *debug_tracker = NULL;
 
 
@@ -424,21 +428,22 @@ void *debug_malloc(unsigned int size, const char *file, unsigned int line) {
     void *ptr = malloc(size);
 
     mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
-    if (!temp) debug_track_fail++;
-    else {
-        
-        mem_t newMem;
-        newMem.ptr = ptr;
-        newMem.size = size;
-        newMem.file = file;
-        newMem.line = line;
-        newMem.busy = false;
-        
-        debug_tracker = temp;
-        debug_tracker[debug_count] = newMem;
-        
-        debug_count++;
+    if (!temp) {
+        debug_track_fail++;
+        return ptr;
     }
+        
+    mem_t newMem;
+    newMem.ptr = ptr;
+    newMem.size = size;
+    newMem.file = file;
+    newMem.line = line;
+    newMem.busy = false;
+    
+    debug_tracker = temp;
+    debug_tracker[debug_count] = newMem;
+    
+    debug_count++;
     
     return ptr;
 }
@@ -447,21 +452,23 @@ void *debug_calloc(unsigned int n, unsigned int size, const char *file, unsigned
     void *ptr = calloc(n, size);
 
     mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
-    if (!temp) debug_track_fail++;
-    else {
-        
-        mem_t newMem;
-        newMem.ptr = ptr;
-        newMem.size = size;
-        newMem.file = file;
-        newMem.line = line;
-        newMem.busy = false;
-        
-        debug_tracker = temp;
-        debug_tracker[debug_count] = newMem;
-        
-        debug_count++;
+    if (!temp) {
+        debug_track_fail++;
+        return ptr;
     }
+
+    mem_t newMem;
+    newMem.ptr = ptr;
+    newMem.size = size;
+    newMem.file = file;
+    newMem.line = line;
+    newMem.busy = false;
+    newMem.freed = false;
+    
+    debug_tracker = temp;
+    debug_tracker[debug_count] = newMem;
+    
+    debug_count++;
     
     return ptr;
 }
@@ -470,32 +477,46 @@ void *debug_realloc(void *ptr, unsigned int size, const char *file, unsigned int
     void *ptr = realloc(ptr, size);
 
     mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
-    if (!temp) debug_track_fail++;
-    else {
-        if (ptr) {
-             
-        }
-        
-        mem_t newMem;
-        newMem.ptr = ptr;
-        newMem.size = size;
-        newMem.file = file;
-        newMem.line = line;
-        newMem.busy = false;
-        
-        debug_tracker = temp;
-        debug_tracker[debug_count] = newMem;
-        
-        debug_count++;
+    if (!temp) {
+        debug_track_fail++;
+        return ptr;
     }
+
+    mem_t newMem;
+    newMem.ptr = ptr;
+    newMem.size = size;
+    newMem.file = file;
+    newMem.line = line;
+    newMem.busy = false;
+    newMem.freed = false;
+    
+    debug_tracker = temp;
+    debug_tracker[debug_count] = newMem;
+    
+    debug_count++;
     
     return ptr;
 }
 
-void *debug_free(unsigned int size, const char *file, unsigned int line) {
-    if (debug_tracker) free
-    
-    return ptr;
+void debug_free(void *ptr, const char *file, unsigned int line) {
+    if (!debug_tracker) return;
+
+    for (unsigned int i=0; i<debug_count; i++) {
+        if (debug_tracker[debug_count].ptr == ptr) {
+            if (debug_tracker[debug_count].freed) {
+                /* Saving debug info for later use */
+                debug_tracker[debug_count].file = file;
+                debug_tracker[debug_count].line = line;
+                
+                return;
+            } else {
+                free(debug_tracker[debug_count].ptr);
+                debug_tracker[debug_count].freed = true;
+                
+                return;
+            }
+        }
+    }
 }
 
 /* Defining here since if I do in the header this shit become cyclical and I can't use 

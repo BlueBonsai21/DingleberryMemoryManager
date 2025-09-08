@@ -1,26 +1,25 @@
 #pragma once
 
-/* IMPORTANT: when using stdlib.h built-in memory management functions and applying this library to debug or 
-see if any memory leak is happening, whenever the pointer you're allocating is NOT correctly initialised
-this library will NOT track it and will NOT consider it in the final report.
-Planning onto changing this in the future. */
+/*
+! IMPORTANT: when using stdlib.h built-in memory management functions and applying this library to debug or 
+! see if any memory leak is happening, whenever the pointer you're allocating is NOT correctly initialised
+! this library will NOT track it and will NOT consider it in the final report.
+! Planning onto changing this in the future.
+*/
 
 
 
-/* FLAGS SWITCHING */
+//! FLAGS
 
-/* Switches the flag to the provided state.
-Default: thread_safe = true. */
-void thread_safety(bool state);
+enum flags {THREAD_SAFE = 0};
 
-/* Switches the flag to false.
-If called, no statistics will be saved nor anything will be printed to console.
-Default: final_report_flag = true */
-void final_report();
+/* Sets the given flag to the provided state. Default:
+THREAD_SAFE = true */
+void set_flag(enum flags flag, bool state);
 
 
 
-/* CUSTOM ALLOCATORS/DEALLOCATORS - SAFE MEMORY MANAGEMENT FUNCTIONS */
+//! CUSTOM ALLOCATORS/DEALLOCATORS - SAFE MEMORY MANAGEMENT FUNCTIONS
 
 /* There is NO need to check for fails manually. Everything is done internally.
 Realloc returns the realloc-ed pointer, if successful, else the provided one.
@@ -52,7 +51,7 @@ void s_free(void *p, const char *file, unsigned int line);
 
 
 
-/* BENCHMARKING FUNCTIONS */
+//! BENCHMARKING FUNCTIONS
 
 /* benchmark_create() creates a benchmark, with a provided unique tag.
 Results of the benchmarks are tracked and displayed only when final_report_flag = true [for this, check final_report()].
@@ -72,7 +71,7 @@ void s_benchmark_stop_all(const char *file, unsigned int line);
 
 
 
-/* MEMORY DIAGNOSIS - DEFAULT ALLOCATORS/DEALLOCATORS USED; NO MEMORY SAFETY GRANTED. */
+//! MEMORY DIAGNOSIS - DEFAULT ALLOCATORS/DEALLOCATORS USED; NO MEMORY SAFETY GRANTED.
 
 /* Ment for internal use. Refer to malloc(). */
 void* debug_malloc(unsigned int size, const char *file, unsigned int line);

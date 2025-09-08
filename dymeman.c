@@ -17,6 +17,11 @@ Add a free_all() function, to free every pointer in manager pointer
 
 #include "dymeman.h"
 
+#define FLAG_ACTIVE  "TRUE"
+#define FLAG_INACTIVE "FALSE"
+
+static pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
+
 bool final_report_flag = true; // flag
 void final_report() {
     final_report_flag = false;
@@ -28,17 +33,9 @@ typedef struct {
     clock_t start;
     clock_t finish;
 } time_bench;
-bool auto_benchmark_flag = false; // flag
 bool auto_benchmarking = false;
 unsigned int timers_count = 0;
 time_bench **benchmarks = NULL;
-
-void auto_benchmark() {
-    auto_benchmark_flag = true;
-}
-
-#define FLAG_ACTIVE  "TRUE"
-#define FLAG_INACTIVE "FALSE"
 
 static unsigned int safety_switch_count = 0;
 static bool thread_safe = true; // flag
@@ -47,6 +44,7 @@ void thread_safety(bool state) {
     thread_safe = !thread_safe;
 }
 
+/* Memory tracking variables */
 typedef struct {
     bool busy;
     void *ptr;
@@ -54,15 +52,24 @@ typedef struct {
     const char *file;
     unsigned int line;
 } mem_t;
+static unsigned int internal_use_allocated = 0;
 static unsigned int total_blocks_allocated = 0;
 static unsigned int total_memory_allocated = 0;
 
-static unsigned int count = 0;
-static mem_t *manager = NULL;
-static pthread_mutex_t thread_lock = PTHREAD_MUTEX_INITIALIZER;
-
+static unsigned int internal_use_freed = 0;
 unsigned int freed_count = 0;
 unsigned int freed_size = 0;
+
+/* For tracking custom allocators/deallocators */
+static unsigned int count = 0;
+static mem_t *manager = NULL;
+
+/* Debug functions substituting stdlib.h functions */
+static unsigned int debug_track_fail = 0;
+static unsigned int debug_count = 0;
+static unsigned int debug_tracker_size = 0;
+static mem_t *debug_tracker = NULL;
+
 
 /* Function called by atexit(). Cleans up memory and gives a final report. */
 static void clear() {
@@ -100,9 +107,6 @@ static void clear() {
     static char *threadSafetyFlag = FLAG_ACTIVE;
     if (!thread_safe) threadSafetyFlag = FLAG_INACTIVE;
 
-    static char *autoBenchmarkFlag = FLAG_ACTIVE;
-    if (!auto_benchmark) autoBenchmarkFlag = FLAG_INACTIVE;
-
     char report[0xfff]; // 4095 chars
     report[0] = '\0';
     strcat(report, "\
@@ -114,9 +118,8 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
     sprintf(flags, "\
 1. FLAGS\n\
 -> thread_safety: %s (switched %i times during execution)\n\
--> auto_benchmark: %s\n\
 -------------------------------------------\n",
-threadSafetyFlag, safety_switch_count, autoBenchmarkFlag);
+threadSafetyFlag, safety_switch_count);
 
     char heap[1000];
     heap[0] = '0';
@@ -193,10 +196,6 @@ void* s_malloc(unsigned int size, const char *file, unsigned int line) {
 
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
-    if (auto_benchmark_flag && !auto_benchmarking) {
-        benchmark_create("AUTO_BENCHMARK_FLAG");
-    }
-
     void *newPtr = NULL;
     unsigned int free_slot = check_free_slots(size);
     if (free_slot == (unsigned int)-1) {
@@ -252,10 +251,6 @@ void* s_calloc(unsigned int n, unsigned int size, const char *file, unsigned int
 
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
-    if (auto_benchmark_flag && !auto_benchmarking) {
-        benchmark_create("AUTO_BENCHMARK_FLAG");
-    }
-
     mem_t *temp = (mem_t *)realloc(manager, (count+1)*sizeof(mem_t));
     if (!temp) {
         printf("Manager realloc failed (F: %s, L: %i).\n", file, line);
@@ -300,10 +295,6 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
 
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
-    if (auto_benchmark_flag && !auto_benchmarking) {
-        benchmark_create("AUTO_BENCHMARK_FLAG");
-    }
-
     bool manager_index = 0;
     bool found = false;
     for (unsigned int i=0; i<count; i++) {
@@ -345,10 +336,6 @@ void* s_realloc(void *ptr, unsigned int newSize, const char *file, unsigned int 
 void s_free(void *p, const char *file, unsigned int line) {
     if (thread_safe) pthread_mutex_lock(&thread_lock);
 
-    if (auto_benchmark_flag && !auto_benchmarking) {
-        benchmark_create("AUTO_BENCHMARK_FLAG");
-    }
-
     for (unsigned int i = 0; i < count; i++) {
         if (manager[i].ptr == p) {
             free(p);
@@ -362,6 +349,30 @@ void s_free(void *p, const char *file, unsigned int line) {
     }
 
     if (thread_safe) pthread_mutex_unlock(&thread_lock);
+}
+
+void s_free_all() {
+    if (!manager) {
+        printf("No manager active. Nothing to free.\n");
+        return;
+    }
+
+    for (unsigned int i = 0; i < count; i++) {
+        if (manager[i].ptr) {
+            if (!manager[i].ptr) continue;
+
+            if (manager[i].busy) {
+                printf("Couldn't free a busy pointer: %p\n", manager[i].ptr);
+                continue;
+            }
+
+            free(manager[i].ptr);
+            manager[i].ptr = NULL;
+            freed_size += manager[i].size;
+            freed_count++;
+        }
+    }
+    printf("Memory freed. Manager remained initialised.\n");
 }
 
 void s_benchmark_create(const char *tag, const char *file, unsigned int line) {
@@ -408,3 +419,89 @@ void s_benchmark_stop_all(const char *file, unsigned int line) {
 
     pthread_mutex_unlock(&thread_lock);
 }
+
+void *debug_malloc(unsigned int size, const char *file, unsigned int line) {
+    void *ptr = malloc(size);
+
+    mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
+    if (!temp) debug_track_fail++;
+    else {
+        
+        mem_t newMem;
+        newMem.ptr = ptr;
+        newMem.size = size;
+        newMem.file = file;
+        newMem.line = line;
+        newMem.busy = false;
+        
+        debug_tracker = temp;
+        debug_tracker[debug_count] = newMem;
+        
+        debug_count++;
+    }
+    
+    return ptr;
+}
+
+void *debug_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
+    void *ptr = calloc(n, size);
+
+    mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
+    if (!temp) debug_track_fail++;
+    else {
+        
+        mem_t newMem;
+        newMem.ptr = ptr;
+        newMem.size = size;
+        newMem.file = file;
+        newMem.line = line;
+        newMem.busy = false;
+        
+        debug_tracker = temp;
+        debug_tracker[debug_count] = newMem;
+        
+        debug_count++;
+    }
+    
+    return ptr;
+}
+
+void *debug_realloc(void *ptr, unsigned int size, const char *file, unsigned int line) {
+    void *ptr = realloc(ptr, size);
+
+    mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
+    if (!temp) debug_track_fail++;
+    else {
+        if (ptr) {
+             
+        }
+        
+        mem_t newMem;
+        newMem.ptr = ptr;
+        newMem.size = size;
+        newMem.file = file;
+        newMem.line = line;
+        newMem.busy = false;
+        
+        debug_tracker = temp;
+        debug_tracker[debug_count] = newMem;
+        
+        debug_count++;
+    }
+    
+    return ptr;
+}
+
+void *debug_free(unsigned int size, const char *file, unsigned int line) {
+    if (debug_tracker) free
+    
+    return ptr;
+}
+
+/* Defining here since if I do in the header this shit become cyclical and I can't use 
+stdlib.h functions. Not a big deal. */
+
+#define malloc(size) debug_malloc(size, __FILE__, __LINE__)
+#define calloc(n, size) debug_calloc(n, size, __FILE__, __LINE__)
+#define realloc(ptr, size) debug_realloc(ptr, size, __FILE__, __LINE__)
+#define free(ptr) debug_free(ptr, __FILE__, __LINE__)

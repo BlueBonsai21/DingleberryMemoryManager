@@ -1,13 +1,19 @@
-/*
-TODO: 
-Create unique tag strings and return them from benchmark_create(), so users don't have to make them up and have no
+/* TODO: 
+-Create unique tag strings and return them from benchmark_create(), so users don't have to make them up and have no
 possibility of overriding previous tags.
-Gotta add a detailed file+line report for auto_benchmark and thread_safety flags switches.
-Make the AUTO_BENCHMARK be either global or local to the first memory management operation called in the program.
-Add better documentation
-Add a free_all() function, to free every pointer in manager pointer
-TODO: free every internal use memory.
+-Gotta add a detailed file+line report for auto_benchmark and thread_safety flags switches.
+-Add better documentation
+-Free every internal use memory.
+-Check again the whole thread safety system. Some functions are missing it.
+-Unify manager and all its associated variables in 1 unique struct. Same goes for debug_tracker.
+This implies a bit of code re-writing, but nothing unbearable. It improves readability, I believe.
+-Add support to track whether NULL pointers are being managed at any point in the program, maybe after
+a faulty malloc.
 */
+
+/* As of now we clearly aren't doing anything with the line and file name. Must implement a better 
+report system. Probably will be a .txt file that opens up automatically when the report is given
+to the user, just like Dr. Memory does. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,7 +102,7 @@ static void clear() {
     if (manager) {
         for (unsigned int i=0; i<count; i++) {
             // in case weird shit happens in other files, we first check whether manager[i] exists
-            if (manager[i].ptr) {
+            if (manager[i].ptr && !manager[i].freed) {
                 freed_size += manager[i].size;
                 free(manager[i].ptr);
                 manager[i].ptr = NULL;
@@ -126,7 +132,7 @@ Dymeman - PROGRAM EXECUTION TERMINATED\n\
 threadSafetyFlag, safety_switch_count);
 
     char heap[1000];
-    heap[0] = '0';
+    heap[0] = '\0';
     sprintf(heap, "\
 2. HEAP\n\
 -> Total allocations: %i\n\
@@ -144,7 +150,7 @@ total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
             sprintf(benchmark_report, "\
                 #%i:\n\
                 \tTag: %s\n\
-                \tTime (ms): %i\n",
+                \tTime (ms): %ld\n",
                 i+1,
                 benchmarks[i]->tag,
                 benchmarks[i]->finish-benchmarks[i]->start);
@@ -160,10 +166,8 @@ total_blocks_allocated, freed_count, total_memory_allocated, freed_size);
     strcat(benchmark_report, "-------------------------------------------\n");
 
     char notes[1000] = "4. NOTES\nMemory management is safe as long as this manager is used.\n\
-Malloc, calloc, realloc, free are all overwritten via preprocessor directives and made safe.\n\
-This doesn't mean that once you've stopped using this manager your program will run as intended.\n\
-By turning off all flags you'll get the best results.\n\
-This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management.\n";
+By turning off all flags you'll get the best performance.\n\
+This memory manager does NOT check for buffer overflows, nor allows multi-thread memory management (to come).\n";
 
     strcat(report, flags);
     strcat(report, heap);
@@ -424,7 +428,16 @@ void s_benchmark_stop_all(const char *file, unsigned int line) {
     pthread_mutex_unlock(&thread_lock);
 }
 
-void *debug_malloc(unsigned int size, const char *file, unsigned int line) {
+#undef malloc
+#undef calloc
+#undef realloc
+#undef free
+void* debug_malloc(unsigned int size, const char *file, unsigned int line) {
+    if(!atexit_active) {
+        atexit(clear);
+        atexit_active = true;
+    }
+    
     void *ptr = malloc(size);
 
     mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
@@ -439,16 +452,24 @@ void *debug_malloc(unsigned int size, const char *file, unsigned int line) {
     newMem.file = file;
     newMem.line = line;
     newMem.busy = false;
+    newMem.freed = false;
     
     debug_tracker = temp;
     debug_tracker[debug_count] = newMem;
     
     debug_count++;
+    total_blocks_allocated++;
+    total_memory_allocated+=size;
     
     return ptr;
 }
 
-void *debug_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
+void* debug_calloc(unsigned int n, unsigned int size, const char *file, unsigned int line) {
+    if(!atexit_active) {
+        atexit(clear);
+        atexit_active = true;
+    }
+    
     void *ptr = calloc(n, size);
 
     mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
@@ -473,56 +494,72 @@ void *debug_calloc(unsigned int n, unsigned int size, const char *file, unsigned
     return ptr;
 }
 
-void *debug_realloc(void *ptr, unsigned int size, const char *file, unsigned int line) {
-    void *ptr = realloc(ptr, size);
-
-    mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
-    if (!temp) {
-        debug_track_fail++;
-        return ptr;
+void* debug_realloc(void *ptr, unsigned int size, const char *file, unsigned int line) {
+    if(!atexit_active) {
+        atexit(clear);
+        atexit_active = true;
     }
+    
+    void *newPtr = realloc(ptr, size);
+    
+    // We store and track shit only if newPtr exists
+    if (newPtr) {
+        // Looking if the ptr has been allocated, yet
+        for (unsigned int i=0; i<debug_count; i++) {
+            if (debug_tracker[i].ptr == ptr) {
+                debug_tracker[i].size = size;
+                
+                return newPtr;
+            }
+        }
+        
+        // In case ptr hasn't been allocated:
+        mem_t *temp = (mem_t *)realloc(debug_tracker, (debug_count+1)*sizeof(mem_t));
+        if (!temp) {
+            debug_track_fail++;
+            return newPtr;
+        }
 
-    mem_t newMem;
-    newMem.ptr = ptr;
-    newMem.size = size;
-    newMem.file = file;
-    newMem.line = line;
-    newMem.busy = false;
-    newMem.freed = false;
+        mem_t newMem;
+        newMem.ptr = newPtr;
+        newMem.size = size;
+        newMem.file = file;
+        newMem.line = line;
+        newMem.busy = false;
+        newMem.freed = false;
+        
+        debug_tracker = temp;
+        debug_tracker[debug_count] = newMem;
+        
+        debug_count++;
+    }
     
-    debug_tracker = temp;
-    debug_tracker[debug_count] = newMem;
-    
-    debug_count++;
-    
-    return ptr;
+    return newPtr;
 }
 
 void debug_free(void *ptr, const char *file, unsigned int line) {
-    if (!debug_tracker) return;
+    if(!atexit_active) {
+        atexit(clear);
+        atexit_active = true;
+    } 
 
     for (unsigned int i=0; i<debug_count; i++) {
-        if (debug_tracker[debug_count].ptr == ptr) {
-            if (debug_tracker[debug_count].freed) {
-                /* Saving debug info for later use */
-                debug_tracker[debug_count].file = file;
-                debug_tracker[debug_count].line = line;
+        if (debug_tracker[i].ptr == ptr) {
+            if (debug_tracker[i].freed) {
+                /* Info about where memory is freed twice */
+                debug_tracker[i].file = file;
+                debug_tracker[i].line = line;
                 
                 return;
             } else {
-                free(debug_tracker[debug_count].ptr);
-                debug_tracker[debug_count].freed = true;
+                free(debug_tracker[i].ptr);
+                debug_tracker[i].freed = true;
+                freed_count++;
+                freed_size+=debug_tracker[i].size;
+                debug_tracker[i].ptr = NULL;
                 
                 return;
             }
         }
     }
 }
-
-/* Defining here since if I do in the header this shit become cyclical and I can't use 
-stdlib.h functions. Not a big deal. */
-
-#define malloc(size) debug_malloc(size, __FILE__, __LINE__)
-#define calloc(n, size) debug_calloc(n, size, __FILE__, __LINE__)
-#define realloc(ptr, size) debug_realloc(ptr, size, __FILE__, __LINE__)
-#define free(ptr) debug_free(ptr, __FILE__, __LINE__)
